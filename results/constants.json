@@ -1,0 +1,115 @@
+{
+    "n_medium": 1.337,
+    "angle_range": [
+        35.0,
+        145.0
+    ],
+    "n_particle_ref": 1.44,
+    "allow_complex_index": true,
+    "core_shell_defaults": {
+        "shell_thickness_nm": 20,
+        "n_shell": 1.45,
+        "k_shell": 0.0,
+        "n_core_prior": 1.39,
+        "k_core_prior": 0.005
+    },
+    "lambda_blue": 4.88e-07,
+    "lambda_violet": 4.05e-07,
+    "mie_max_nmax": 100,
+    "mie_n_points": 300,
+    "mie_absolute_max_nmax": 1000,
+    "mie_safety_factor": 2,
+    "mie_approx_threshold": 1e-36,
+    "mie_large_particle_threshold": 100,
+    "mie_small_particle_factor": 2,
+    "mie_large_particle_factor": 1.5,
+    "mie_cache_precision": 1e-10,
+    "diameter_min": 50,
+    "diameter_max": 20000,
+    "diameter_step": 50,
+    "index_min": 1.01,
+    "index_max": 1.8,
+    "index_step": 0.01,
+    "k_min": 0.0,
+    "k_max": 0.02,
+    "k_step": 0.002,
+    "shell_thickness_min": 5,
+    "shell_thickness_max": 50,
+    "shell_thickness_step": 5,
+    "solver_strategy": "sequential",
+    "default_diameter_init": 500,
+    "default_index_init": 1.05,
+    "default_k_init": 0.001,
+    "solver_tolerance": 1e-06,
+    "solver_cost_threshold": 10000.0,
+    "lookup_table_enabled": false,
+    "lookup_table_path": "results/lookup_table.pkl",
+    "lookup_table_compression": true,
+    "min_size_for_parallel": 10,
+    "parallel_enabled": false,
+    "parallel_jobs": -1,
+    "fcs_header_size": 58,
+    "output_dir": "results",
+    "output_patterns": {
+        "results_csv": "{sample_name}_results.csv",
+        "plot": "{sample_name}_plot.png",
+        "config": "constants.json",
+        "calib_plot": "calibration_plot.png",
+        "lookup_table": "lookup_table.pkl",
+        "lookup_checkpoint": "lookup_checkpoint_{part}.pkl"
+    },
+    "channel_mappings": {
+        "default": {
+            "blue_ssc_index": 1,
+            "violet_ssc_index": 2
+        },
+        "synechococcus": {
+            "blue_ssc_index": 1,
+            "violet_ssc_index": 2
+        },
+        "prochlorococcus": {
+            "blue_ssc_index": 1,
+            "violet_ssc_index": 2
+        },
+        "picoeukaryotes": {
+            "blue_ssc_index": 2,
+            "violet_ssc_index": 4
+        }
+    },
+    "channel_name_patterns": {
+        "blue_ssc": [
+            "SSC",
+            "SSC-H",
+            "SSC-A"
+        ],
+        "violet_ssc": [
+            "SSC_1",
+            "SSC-H",
+            "SSC_V",
+            "SSC-V"
+        ]
+    },
+    "plot_margins": {
+        "diameter": 0.3,
+        "intensity": 0.4,
+        "index": 0.2
+    },
+    "plot_dpi": 150,
+    "plot_figsize": [
+        10,
+        8
+    ],
+    "plot_bins": 50,
+    "plot_scatter_cmap": "viridis",
+    "plot_hist2d_cmap": "inferno",
+    "plot_color_488": "blue",
+    "plot_color_405": "purple",
+    "K488": 8.048591791028843e+16,
+    "K405": 6.21549910973658e+17,
+    "B488": 5036.035773749614,
+    "B405": 37707.158969457945,
+    "min_I488": 4079.3,
+    "max_I488": 226678.32000000004,
+    "min_I405": 28121.1,
+    "max_I405": 1873733.2200000004
+}
