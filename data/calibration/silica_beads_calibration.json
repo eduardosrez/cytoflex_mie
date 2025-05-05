@@ -1,0 +1,45 @@
+{
+    "metadata": {
+        "n_medium": 1.337,
+        "n_particles": 1.44,
+        "description": "Archivo de calibración de bolas de sílice",
+        "date_created": "2025-05-04"
+    },
+    "data": [
+        {
+            "diameter_nm": 200,
+            "Blue_SSC-H": 4048,
+            "Violet_SSC-H": 37395
+        },
+        {
+            "diameter_nm": 400,
+            "Blue_SSC-H": 5016,
+            "Violet_SSC-H": 27633
+        },
+        {
+            "diameter_nm": 600,
+            "Blue_SSC-H": 4674,
+            "Violet_SSC-H": 52114
+        },
+        {
+            "diameter_nm": 800,
+            "Blue_SSC-H": 10120,
+            "Violet_SSC-H": 68887
+        },
+        {
+            "diameter_nm": 1000,
+            "Blue_SSC-H": 9267,
+            "Violet_SSC-H": 64576
+        },
+        {
+            "diameter_nm": 5000,
+            "Blue_SSC-H": 198308,
+            "Violet_SSC-H": 1640000
+        },
+        {
+            "diameter_nm": 10000,
+            "Blue_SSC-H": 640000,
+            "Violet_SSC-H": 4200000
+        }
+    ]
+}
