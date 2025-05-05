@@ -697,11 +697,11 @@ def validate_range_parameters(args, config):
 
 def main():
     """Función principal"""
-    # Configurar y procesar argumentos de línea de comandos primero
+    # 1. Parsear argumentos PRIMERO
     parser = setup_parser()
     args = parser.parse_args()
     
-    # Configurar logging DESPUÉS de parsear argumentos, usando el valor de args.verbose
+    # 2. Configurar Logging DESPUÉS de parsear argumentos
     log_level = logging.DEBUG if args.verbose else logging.INFO
     
     # Asegurar que el directorio de salida exista antes de configurar el log
@@ -709,17 +709,16 @@ def main():
     ensure_dir(output_dir)
     log_file = os.path.join(output_dir, 'cytoflex.log')
     
-    # Ahora configurar el logging con los parámetros correctos (sin force_reconfigure)
+    # Configurar logging con el nivel correcto
     configure_logging(level=log_level, log_file=log_file)
-    
-    # Silenciar loggers ruidosos de bibliotecas externas
     quiet_noisy_loggers()
     
-    # Inicializar configuración global después de configurar logging
+    # 3. Inicializar config y obtener logger DESPUÉS de configurar logging
+    logger = get_logger('cytoflex_main')
     config = get_config()
     
-    # Recrear el logger para este módulo
-    logger = get_logger('cytoflex_main')
+    # Mensaje de prueba para confirmar que verbose está activado
+    logger.debug("Modo verbose activado correctamente.")
     
     # Si no hay comando, mostrar ayuda
     if not args.command:
