@@ -516,12 +516,12 @@ def sigma_sca_ssc(r, n_particle, λ, n_medium, angle_range):
         dsigma = (np.abs(S1)**2 + np.abs(S2)**2) / k**2
         dsigma_values[i] = dsigma * 2 * np.pi * np.sin(theta)
     
-    # Integración numérica
-    sigma_ssc = np.sum(dsigma_values) * dtheta
+    # Integración numérica usando regla del trapecio para mayor precisión
+    sigma_ssc = np.trapz(dsigma_values, dx=dtheta)
     
-    # Protección final contra valores no físicos
+    # Protección contra valores no físicos
     if not np.isfinite(sigma_ssc) or sigma_ssc < 0:
-        logger.debug(f"Valor de sigma no físico: sigma_ssc={sigma_ssc}, sigma_approx={sigma_approx}, usando aproximación")
+        logger.debug(f"Valor de sigma no físico: sigma_ssc={sigma_ssc}, usando aproximación")
         # Configuración para la aproximación r^6
         config = get_config()
         # Factor de escala para asegurar unidades consistentes [m²/nm^6]
@@ -718,8 +718,8 @@ def sigma_sca_ssc_coreshell(r_core, t_shell, n_core, k_core, n_shell, k_shell, �
         dsigma = (np.abs(S1)**2 + np.abs(S2)**2) / k**2
         dsigma_values[i] = dsigma * 2 * np.pi * np.sin(theta)
     
-    # Integración numérica
-    sigma_ssc = np.sum(dsigma_values) * dtheta
+    # Integración numérica usando regla del trapecio para mayor precisión
+    sigma_ssc = np.trapz(dsigma_values, dx=dtheta)
     
     # Protección contra valores no físicos
     if not np.isfinite(sigma_ssc) or sigma_ssc < 0:
@@ -795,8 +795,8 @@ def integrate_sigma(an_vals, bn_vals, x, angle_range):
         dsigma = (np.abs(S1)**2 + np.abs(S2)**2) / k**2
         dsigma_values[i] = dsigma * 2 * np.pi * np.sin(theta)
     
-    # Integración numérica
-    sigma = np.sum(dsigma_values) * dtheta
+    # Integración numérica usando regla del trapecio para mayor precisión
+    sigma = np.trapz(dsigma_values, dx=dtheta)
     
     return sigma
 

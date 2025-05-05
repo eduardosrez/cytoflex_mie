@@ -680,10 +680,19 @@ def validate_ssc_indices(blue_ssc_idx, violet_ssc_idx, par_count, data, channel_
     # Obtener umbral para detección heurística desde configuración o usar valor por defecto
     heuristic_threshold = config.io.get('heuristic_intensity_threshold', 100)
     
+    # Guardar los índices detectados antes de sobrescribir
+    original_blue_idx = blue_ssc_idx
+    original_violet_idx = violet_ssc_idx
+    
     # Siempre usar los índices de la configuración si están disponibles
     if channel_config:
         logger.info(f"Usando índices de configuración para '{sample_name or 'default'}': "
                    f"Blue={default_blue_idx}, Violet={default_violet_idx}")
+        # Comprobar si se sobrescribió la detección automática
+        if default_blue_idx != original_blue_idx or default_violet_idx != original_violet_idx:
+            logger.debug(f"Mapeo específico sobrescribió índices detectados "
+                        f"(Blue: {original_blue_idx}->{default_blue_idx}, "
+                        f"Violet: {original_violet_idx}->{default_violet_idx})")
         blue_ssc_idx = default_blue_idx
         violet_ssc_idx = default_violet_idx
     

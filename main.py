@@ -369,13 +369,24 @@ def process_sample(sample_path, config, output_dir=None, use_parallel=None, look
     try:
         with open(results_path, 'w', newline='') as f:
             writer = csv.writer(f)
-            writer.writerow(['diameter_nm', 'n_particle', 'converged', 'I488', 'I405'])
+            writer.writerow(['diameter_nm', 'n_particle_real', 'k_particle_imag', 'converged', 'I488', 'I405'])
             for d, n, conv, i488, i405 in zip(diameters, n_particles, converged, I488, I405):
                 # Convertir a tipos nativos de Python para CSV
                 # Usar float('nan') para NaN para mantener la coherencia de tipos numéricos
+                n_val_real = float('nan')
+                n_val_imag = 0.0
+                
+                if not np.isnan(d) and not np.isnan(n):
+                    if np.iscomplexobj(n):
+                        n_val_real = n.real
+                        n_val_imag = n.imag
+                    else:
+                        n_val_real = float(n)
+                
                 writer.writerow([
                     float(d) if not np.isnan(d) else float('nan'), 
-                    float(n) if not np.isnan(n) else float('nan'), 
+                    n_val_real, 
+                    n_val_imag,
                     bool(conv), 
                     float(i488), 
                     float(i405)
@@ -680,20 +691,29 @@ def validate_range_parameters(args, config):
 
 def main():
     """Función principal"""
-    # Configurar logging primero antes de cualquier otra operación
-    log_level = logging.DEBUG if '--verbose' in sys.argv or '-v' in sys.argv else logging.INFO
-    log_file = os.path.join('results', 'cytoflex.log') if os.path.exists('results') else None
-    configure_logging(level=log_level, log_file=log_file)
-    
-    # Silenciar loggers ruidosos de bibliotecas externas
-    quiet_noisy_loggers()
-    
     # Inicializar configuración global
     config = get_config()
     
     # Configurar y procesar argumentos de línea de comandos
     parser = setup_parser()
     args = parser.parse_args()
+    
+    # Configurar logging DESPUÉS de parsear argumentos, usando el valor de args.verbose
+    log_level = logging.DEBUG if args.verbose else logging.INFO
+    
+    # Asegurar que el directorio de salida exista antes de configurar el log
+    output_dir = args.output_dir if hasattr(args, 'output_dir') and args.output_dir else 'results'
+    ensure_dir(output_dir)
+    log_file = os.path.join(output_dir, 'cytoflex.log')
+    
+    # Ahora configurar el logging con los parámetros correctos
+    configure_logging(level=log_level, log_file=log_file)
+    
+    # Silenciar loggers ruidosos de bibliotecas externas
+    quiet_noisy_loggers()
+    
+    # Crear logger para este módulo (después de configurar el logging)
+    logger = get_logger('cytoflex_main')
     
     # Si no hay comando, mostrar ayuda
     if not args.command:
@@ -711,8 +731,7 @@ def main():
             parser.error(f"Errores de validación en parámetros de rango:\n{validation_message}")
             return 1  # Código de error, aunque parser.error termina el proceso
         
-        # Crear directorio de salida si no existe
-        ensure_dir(args.output_dir)
+        # La carpeta de salida ya fue creada al configurar el logging
         
         # Guardar la configuración si se solicita explícitamente
         save_config_if_requested(config, updates, args)

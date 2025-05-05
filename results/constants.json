@@ -72,8 +72,8 @@
             "violet_ssc_index": 2
         },
         "picoeukaryotes": {
-            "blue_ssc_index": 1,
-            "violet_ssc_index": 3
+            "blue_ssc_index": 2,
+            "violet_ssc_index": 4
         }
     },
     "channel_name_patterns": {
@@ -104,10 +104,10 @@
     "plot_hist2d_cmap": "inferno",
     "plot_color_488": "blue",
     "plot_color_405": "purple",
-    "K488": 8.114555054833602e+16,
-    "K405": 6.307384056690963e+17,
-    "B488": 5057.878907430512,
-    "B405": 37902.90007055122,
+    "K488": 8.179912482010043e+16,
+    "K405": 6.319254266759066e+17,
+    "B488": 5062.6058904116035,
+    "B405": 38050.39180986014,
     "min_I488": 4079.3,
     "max_I488": 226678.32000000004,
     "min_I405": 28121.1,
