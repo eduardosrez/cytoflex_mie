@@ -18,20 +18,32 @@ DEFAULT_LEVEL = logging.INFO
 # Configuración global ha sido aplicada
 _LOGGING_CONFIGURED = False
 
-def configure_logging(level=None, log_format=None, log_file=None):
+def configure_logging(level=None, log_format=None, log_file=None, force_reconfigure=False):
     """
     Configura el sistema de logging para toda la aplicación.
-    Se debe llamar una única vez al inicio de la aplicación.
     
     Args:
         level: Nivel de logging (logging.DEBUG, logging.INFO, etc.)
         log_format: Formato de los mensajes de log
         log_file: Si se proporciona, ruta donde guardar los logs
+        force_reconfigure: Si es True, reconfigura aunque ya esté configurado
     """
     global _LOGGING_CONFIGURED
     
-    if _LOGGING_CONFIGURED:
+    # Verificar si ya está configurado
+    if _LOGGING_CONFIGURED and not force_reconfigure:
         logging.warning("La configuración de logging ya ha sido aplicada. Se ignorará esta llamada.")
+        return
+    
+    # Si ya está configurado pero queremos forzar la reconfiguración
+    if _LOGGING_CONFIGURED and force_reconfigure:
+        # En este caso solo actualizamos el nivel de los handlers existentes
+        if level is not None:
+            root_logger = logging.getLogger()
+            root_logger.setLevel(level)
+            for handler in root_logger.handlers:
+                handler.setLevel(level)
+            logging.debug(f"Nivel de logging actualizado a {logging.getLevelName(level)}")
         return
     
     # Usar valores por defecto si no se proporcionan

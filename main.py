@@ -24,11 +24,12 @@ def setup_parser():
     """Configura el parser de argumentos de línea de comandos"""
     config = get_config()
     
+    # Crear el parser principal con una configuración simple y estándar
     parser = argparse.ArgumentParser(
         description="CytoFLEX Mie - Estima diámetro e índice de refracción desde señales SSC"
     )
     
-    # Argumentos generales
+    # Argumentos generales - DEBEN ir ANTES de definir subparsers
     parser.add_argument('--verbose', '-v', action='store_true',
                        help="Mostrar mensajes de debug")
     parser.add_argument('--output-dir', '-o', type=str, default='results',
@@ -48,8 +49,13 @@ def setup_parser():
     parser.add_argument('--no-progress', action='store_false', dest='progress',
                        help="No mostrar barras de progreso")
     
-    # Subcomandos
-    subparsers = parser.add_subparsers(dest='command', help='Comandos disponibles')
+    # Crear subparsers DESPUÉS de definir argumentos globales
+    subparsers = parser.add_subparsers(
+        dest='command', 
+        help='Comandos disponibles',
+        metavar='COMMAND',
+        required=False
+    )
     
     # Calibración
     calib_parser = subparsers.add_parser('calibrate', help='Calibrar usando partículas de referencia')
@@ -691,10 +697,7 @@ def validate_range_parameters(args, config):
 
 def main():
     """Función principal"""
-    # Inicializar configuración global
-    config = get_config()
-    
-    # Configurar y procesar argumentos de línea de comandos
+    # Configurar y procesar argumentos de línea de comandos primero
     parser = setup_parser()
     args = parser.parse_args()
     
@@ -706,13 +709,16 @@ def main():
     ensure_dir(output_dir)
     log_file = os.path.join(output_dir, 'cytoflex.log')
     
-    # Ahora configurar el logging con los parámetros correctos
+    # Ahora configurar el logging con los parámetros correctos (sin force_reconfigure)
     configure_logging(level=log_level, log_file=log_file)
     
     # Silenciar loggers ruidosos de bibliotecas externas
     quiet_noisy_loggers()
     
-    # Crear logger para este módulo (después de configurar el logging)
+    # Inicializar configuración global después de configurar logging
+    config = get_config()
+    
+    # Recrear el logger para este módulo
     logger = get_logger('cytoflex_main')
     
     # Si no hay comando, mostrar ayuda
