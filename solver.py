@@ -194,7 +194,8 @@ def create_lookup_table(constants, save_to_disk=True, output_path=None, use_chec
             f.write(f"Tiempo estimado restante: {est_remaining_time/60:.1f} minutos\n")
     
     # Generar la tabla en paralelo o secuencial
-    if parallel_enabled and len(remaining_diameters) >= 10:
+    min_items_for_parallel = config.solver.get('min_size_for_parallel', 5) # Defaulting to 5 if not in config
+    if parallel_enabled and len(remaining_diameters) >= min_items_for_parallel:
         # Procesamiento paralelo con joblib
         logger.info(f"Usando modo paralelo con {n_jobs if n_jobs != -1 else 'todos los'} cores")
         
@@ -726,7 +727,7 @@ def invert_d(I_obs, K, λ, n_part, n_medium, angle_range, d_min=None, d_max=None
         d_max: Diámetro máximo para la búsqueda (nm, opcional, se usa config si es None)
         
     Returns:
-        Diámetro estimado en nm
+        Diámetro estimado en nm, o np.nan si no se encuentra una solución.
     """
     # Importar con ámbito local para evitar dependencias circulares
     from calibration import sigma_sca_ssc, sigma_sca_ssc_coreshell

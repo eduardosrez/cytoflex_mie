@@ -16,6 +16,10 @@ except ImportError:
     def tqdm(iterable, **kwargs):
         return iterable
 
+from joblib import Parallel, delayed
+# Ensure get_config is already imported: from config import get_config
+# Ensure logger is available
+
 # Reemplazar la configuración básica por un logger configurado centralmente
 logger = get_logger('cytoflex_calibration')
 
@@ -448,7 +452,7 @@ def sigma_sca_ssc(r, n_particle, λ, n_medium, angle_range):
         angle_range: Lista con [ángulo_mínimo, ángulo_máximo] en grados
         
     Returns:
-        Sección eficaz de dispersión para el rango angular [m²]
+        Sección eficaz de dispersión para el rango angular [m²], o np.nan si ocurre un error.
     """
     # Configurar parámetros comunes
     setup = setup_mie_calculation(r, n_particle, λ, n_medium)
@@ -538,6 +542,11 @@ def mie_2layer_coeffs(x_core, x_total, m_core, m_shell):
         
     Returns:
         Tupla con (lista de a_n, lista de b_n) para la partícula núcleo-corteza
+    
+    Raises:
+        ValueError: If numerical issues occur (e.g. non-finite intermediate values).
+        ZeroDivisionError: If a division by zero is attempted.
+        Exception: Other exceptions from underlying math functions re-raised after logging.
     """
     # Obtener configuración actual
     from config import get_config
@@ -748,7 +757,7 @@ def sigma_sca_ssc_coreshell(r_core, t_shell, n_core, k_core, n_shell, k_shell, �
         angle_range: Lista con [ángulo_mínimo, ángulo_máximo] en grados
         
     Returns:
-        Sección eficaz de dispersión para el rango angular [m²]
+        Sección eficaz de dispersión para el rango angular [m²], o np.nan si ocurre un error.
     """
     # Validación de parámetros de entrada
     if r_core <= 0 or t_shell < 0 or n_core <= 0 or n_shell <= 0 or n_med <= 0 or λ <= 0:
@@ -1010,13 +1019,26 @@ def calculate_sigma_array(
     Returns:
         Numpy array con σ_sca para cada diámetro.
     """
-    # Convertir diámetros [nm] a radios [m]
+    config = get_config()
+    logger_cal = get_logger('cytoflex_calibration') # Ensure logger is accessible
+
     radii = diameters_nm * 1e-9 / 2
-    
-    # Calcular σ para cada radio
-    sigma_vals = []
-    for r in radii:
-        sigma = sigma_func(r, n_particle, wavelength, n_medium, angle_range)
-        sigma_vals.append(sigma)
+
+    parallel_enabled = config.solver.get('parallel_enabled', True)
+    n_jobs = config.solver.get('parallel_jobs', -1)
+    # Using a specific threshold for calibration, can be adjusted
+    min_points_for_parallel = config.solver.get('min_calibration_points_for_parallel', 5) 
+
+    if parallel_enabled and len(radii) >= min_points_for_parallel:
+        logger_cal.debug(f"Calculating sigma array in parallel for {len(radii)} points (n_jobs={n_jobs}).")
+        sigma_vals = Parallel(n_jobs=n_jobs)(
+            delayed(sigma_func)(r, n_particle, wavelength, n_medium, angle_range) for r in radii
+        )
+    else:
+        logger_cal.debug(f"Calculating sigma array sequentially for {len(radii)} points.")
+        sigma_vals = []
+        for r in radii:
+            sigma = sigma_func(r, n_particle, wavelength, n_medium, angle_range)
+            sigma_vals.append(sigma)
     
     return np.array(sigma_vals)

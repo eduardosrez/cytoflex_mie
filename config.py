@@ -184,8 +184,9 @@ class SolverConfig(BaseConfig):
         "lookup_table_enabled": False,  # Si usar tablas de lookup por defecto
         "lookup_table_path": "results/lookup_table.pkl",  # Ruta por defecto
         "lookup_table_compression": True,  # Si comprimir tabla con gzip
-        "min_size_for_parallel": 10,  # Mínimo tamaño para activar paralelismo
-        "parallel_enabled": False,  # Si usar paralelismo por defecto
+        "min_size_for_parallel": 5,  # Mínimo número de items (partículas en inversión, diámetros en lookup table) para activar paralelismo
+        "min_calibration_points_for_parallel": 5, # Min number of calibration points to use parallel processing in calculate_sigma_array
+        "parallel_enabled": True,  # Si usar paralelismo (activado por defecto para mayor velocidad)
         "parallel_jobs": -1,  # Número de trabajos para paralelización (-1 = todos)
     }
     
