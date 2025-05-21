@@ -568,6 +568,7 @@ def invert_scatter(I488, I405, constants, use_parallel=None, lookup_table=None, 
         
         # Estrategia secuencial (405 → 488 nm) para índices complejos
         if strategy == 'sequential' and allow_complex_index:
+            logger.debug(f"Partícula {idx}: Attempting sequential inversion strategy.")
             try:
                 # Paso 1: Estimar diámetro usando la señal de 405 nm (asumiendo k≈0 para 405nm)
                 # Obtener valor inicial para n del núcleo desde la configuración
@@ -576,6 +577,7 @@ def invert_scatter(I488, I405, constants, use_parallel=None, lookup_table=None, 
                 
                 # Invertir diámetro con 405 nm (menos afectado por absorción)
                 d_est = invert_d(i405, K405, λ405, n_prior, n_medium, angle_range, d_min=d_min, d_max=d_max)
+                logger.debug(f"Partícula {idx} (Sequential Strategy): d_est (from 405nm) = {d_est:.2f} nm, n_prior_for_d_est = {n_prior:.3f}")
                 
                 if np.isnan(d_est):
                     logger.debug(f"Partícula {idx}: falló inversión de diámetro con 405 nm")
@@ -586,6 +588,7 @@ def invert_scatter(I488, I405, constants, use_parallel=None, lookup_table=None, 
                 n_est, k_est = fit_nk_fixed_d(d_est, i488, K488, λ488, n_medium, angle_range,
                                             n_prior=n_prior, 
                                             k_prior=core_shell_defaults.get('k_core_prior', 0.005))
+                logger.debug(f"Partícula {idx} (Sequential Strategy): n_est = {n_est:.4f}, k_est = {k_est:.4f} (from 488nm fit with d_est={d_est:.2f} nm)")
                 
                 # Combinar resultados y verificar si son físicamente razonables
                 if d_min <= d_est <= d_max and n_min <= n_est <= n_max:
@@ -796,10 +799,11 @@ def invert_d(I_obs, K, λ, n_part, n_medium, angle_range, d_min=None, d_max=None
     try:
         # Usar brentq para encontrar la raíz en el intervalo [d_min, d_max]
         d_estimated = brentq(f, d_min, d_max, maxiter=max_iterations)
+        logger.debug(f"invert_d successful for n_part={n_part} in initial range [{d_min}, {d_max}]. d_estimated={d_estimated:.2f} nm")
         return d_estimated
     except ValueError as e:
         # Si la función no cambia de signo en el intervalo, no hay solución
-        logger.debug(f"No se encontró solución para d con n_part={n_part}: {e}")
+        logger.debug(f"No se encontró solución para d con n_part={n_part} in initial range [{d_min}, {d_max}]: {e}")
         # Estrategia de reintentos con rangos más amplios
         retry_ranges = [
             (absolute_d_min, d_max),         # Probar con mínimo absoluto
@@ -807,13 +811,18 @@ def invert_d(I_obs, K, λ, n_part, n_medium, angle_range, d_min=None, d_max=None
             (absolute_d_min, absolute_d_max) # Probar con rango absoluto
         ]
         
-        for d_range in retry_ranges:
+        for i, d_range_retry in enumerate(retry_ranges):
+            logger.debug(f"invert_d retrying for n_part={n_part} with range [{d_range_retry[0]}, {d_range_retry[1]}] (attempt {i+1}/{len(retry_ranges)})")
             try:
-                return brentq(f, d_range[0], d_range[1], maxiter=max_iterations + 50)
+                d_estimated = brentq(f, d_range_retry[0], d_range_retry[1], maxiter=max_iterations + 50)
+                logger.debug(f"invert_d successful on retry {i+1} with range [{d_range_retry[0]}, {d_range_retry[1]}]. d_estimated={d_estimated:.2f} nm")
+                return d_estimated
             except ValueError:
+                logger.debug(f"invert_d retry {i+1} failed for n_part={n_part} with range [{d_range_retry[0]}, {d_range_retry[1]}]")
                 continue
         
         # Si todos los reintentos fallan, devolver NaN
+        logger.debug(f"invert_d all retries failed for n_part={n_part}. Returning NaN.")
         return np.nan
 
 def fit_nk_fixed_d(d, i488, K488, λ488, n_medium, angle_range, n_prior=None, k_prior=None, sigma_n=None, sigma_k=None):
@@ -937,74 +946,3 @@ def fit_nk_fixed_d(d, i488, K488, λ488, n_medium, angle_range, n_prior=None, k_
         logger.debug(f"Error en fit_nk_fixed_d: {e}")
         # En caso de error, devolver los valores previos
         return n_prior, k_prior
-
-# Función de utilidad para probar la regeneración o reutilización de tablas
-def test_lookup_table_regeneration(constants, modified_config=None):
-    """
-    Prueba si la tabla de lookup se regenera correctamente cuando cambia la configuración
-    
-    Args:
-        constants: Diccionario con constantes de calibración
-        modified_config: Diccionario con cambios a aplicar a la configuración
-        
-    Returns:
-        Tupla con (tabla original, tabla nueva, tiempo de carga original, tiempo de regeneración)
-    """
-    config = get_config()
-    
-    # Guardar configuración original
-    original_config = config.as_dict()
-    
-    # Medir tiempo de creación/carga original
-    start_time = time.time()
-    table1 = create_lookup_table(constants, save_to_disk=True)
-    original_load_time = time.time() - start_time
-    
-    # Si hay modificaciones, aplicarlas
-    if modified_config:
-        config.update(modified_config)
-        
-    # Medir tiempo de carga/regeneración con posibles cambios
-    start_time = time.time()
-    table2 = create_lookup_table(constants, save_to_disk=True)
-    modified_load_time = time.time() - start_time
-    
-    # Restaurar configuración original
-    config.update(original_config)
-    
-    return table1, table2, original_load_time, modified_load_time
-
-if __name__ == "__main__":
-    # Ejemplo de prueba de la tabla de lookup
-    config = get_config()
-    
-    # Cargar constantes mínimas para la prueba
-    test_constants = {
-        'K488': 2.8e18,
-        'K405': 1.4e19,
-        'n_medium': config.n_medium,
-        'angle_range': config.angle_range
-    }
-    
-    # Probar carga/regeneración sin cambios (debería ser rápido)
-    table1, table2, time1, time2 = test_lookup_table_regeneration(test_constants)
-    print(f"\nPrueba 1 - Sin cambios:")
-    print(f"  Tiempo original: {time1:.3f} s")
-    print(f"  Tiempo recarga: {time2:.3f} s")
-    print(f"  ¿Tablas idénticas? {np.array_equal(table1[0], table2[0])}")
-    
-    # Probar con cambio en diámetro mínimo (debería regenerar)
-    _, table3, _, time3 = test_lookup_table_regeneration(
-        test_constants, {'diameter_min': config.solver.get('diameter_min') + 10}
-    )
-    print(f"\nPrueba 2 - Cambio en diameter_min:")
-    print(f"  Tiempo regeneración: {time3:.3f} s")
-    print(f"  ¿Tablas idénticas? {np.array_equal(table1[0], table3[0])}")
-    
-    # Probar con cambio en constante de calibración (debería regenerar)
-    _, table4, _, time4 = test_lookup_table_regeneration(
-        {**test_constants, 'K488': test_constants['K488'] * 1.01}
-    )
-    print(f"\nPrueba 3 - Cambio en K488:")
-    print(f"  Tiempo regeneración: {time4:.3f} s")
-    print(f"  ¿Tablas idénticas? {np.array_equal(table1[0], table4[0])}")

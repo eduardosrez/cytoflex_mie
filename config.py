@@ -66,7 +66,7 @@ class ScientificConfig(BaseConfig):
         
         # Parámetros Mie
         "mie_max_nmax": 100,  # Límite máximo para nmax
-        "mie_n_points": 100,  # Número de puntos para integración angular
+        "mie_n_points": 300,  # Número de puntos para integración angular (mayor -> más preciso pero más lento)
         "mie_absolute_max_nmax": 1000,  # Límite absoluto para nmax (partículas muy grandes)
         "mie_safety_factor": 2,  # Factor de seguridad para nmax (Wiscombe recomienda 2-3)
         "mie_approx_threshold": 1e-36,  # Factor para aproximación de Rayleigh [m²/nm^6]
@@ -831,10 +831,7 @@ class Config:
                 'index_min': self.solver.get('index_min'),
                 'index_max': self.solver.get('index_max'),
                 'index_step': self.solver.get('index_step'),
-                'default_diameter_init': self.solver.get('default_diameter_init'),
-                'default_index_init': self.solver.get('default_index_init'),
-                'solver_tolerance': self.solver.get('solver_tolerance'),
-                'solver_cost_threshold': self.solver.get('solver_cost_threshold')
+                # Removed: default_diameter_init, default_index_init, solver_tolerance, solver_cost_threshold
             }
         }
         
@@ -843,7 +840,15 @@ class Config:
             'n_medium': self.scientific.get('n_medium'),
             'angle_range': self.scientific.get('angle_range'),
             'lambda_blue': self.scientific.get('lambda_blue'),
-            'lambda_violet': self.scientific.get('lambda_violet')
+            'lambda_violet': self.scientific.get('lambda_violet'),
+            'mie_n_points': self.scientific.get('mie_n_points'),
+            'mie_cache_precision': self.scientific.get('mie_cache_precision'),
+            'mie_max_nmax': self.scientific.get('mie_max_nmax'),
+            'mie_absolute_max_nmax': self.scientific.get('mie_absolute_max_nmax'),
+            'mie_safety_factor': self.scientific.get('mie_safety_factor'),
+            'mie_large_particle_threshold': self.scientific.get('mie_large_particle_threshold'),
+            'mie_small_particle_factor': self.scientific.get('mie_small_particle_factor'),
+            'mie_large_particle_factor': self.scientific.get('mie_large_particle_factor'),
         }
         
         # Incluir constantes de calibración si se solicita

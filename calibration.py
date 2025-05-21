@@ -129,11 +129,11 @@ def _discretize_float(value, precision=1e-10):
         Valor discretizado como tupla (parte entera, parte decimal discretizada)
     """
     if np.iscomplex(value):
-        real_part = int(value.real / precision) * precision
-        imag_part = int(value.imag / precision) * precision
+        real_part = round(value.real / precision) * precision
+        imag_part = round(value.imag / precision) * precision
         return (real_part, imag_part)
     else:
-        return int(value / precision) * precision
+        return round(value / precision) * precision
 
 @lru_cache(maxsize=1024)
 def mie_an_cached(n, x_discrete, m_discrete):
@@ -187,12 +187,8 @@ def mie_an(n, x, m, config=None):
     precision = config.get('mie_cache_precision', 1e-10)
     
     # Discretizar los valores flotantes para mejorar el uso de cache
-    # Redondear a enteros para uso eficiente del cache
-    x_discrete = int(round(x / precision)) * precision
-    m_discrete = int(round(m / precision)) * precision if not np.iscomplex(m) else (
-        int(round(m.real / precision)) * precision + 
-        1j * int(round(m.imag / precision)) * precision
-    )
+    x_discrete = _discretize_float(x, precision)
+    m_discrete = _discretize_float(m, precision)
     
     # Llamar a la versión cacheada con valores discretizados
     return mie_an_cached(n, x_discrete, m_discrete)
@@ -521,17 +517,11 @@ def sigma_sca_ssc(r, n_particle, λ, n_medium, angle_range):
     
     # Protección contra valores no físicos
     if not np.isfinite(sigma_ssc) or sigma_ssc < 0:
-        logger.debug(f"Valor de sigma no físico: sigma_ssc={sigma_ssc}, usando aproximación")
-        # Configuración para la aproximación r^6
-        config = get_config()
-        # Factor de escala para asegurar unidades consistentes [m²/nm^6]
-        approx_threshold = config.get('mie_approx_threshold', 1e-36)  # [m²/nm^6]
-        # Diámetro en nm para la fórmula de aproximación
-        diameter_nm = 2 * r * 1e9  # convertir radio en metros a diámetro en nm
-        # Aproximación de Rayleigh (proporcional a d^6)
-        sigma_approx = approx_threshold * (diameter_nm ** 6)  # resultado en [m²]
-        logger.debug(f"Aproximación para partícula pequeña: d={diameter_nm:.2f} nm, sigma={sigma_approx:.3e} m²")
-        return sigma_approx
+        logger.warning(
+            f"Non-physical sigma_ssc encountered: {sigma_ssc:.4e}. "
+            f"Inputs: r={r:.4e} m, n_particle={n_particle}, lambda={λ:.4e} m. Returning NaN."
+        )
+        return np.nan
     
     return sigma_ssc
 
@@ -586,30 +576,154 @@ def mie_2layer_coeffs(x_core, x_total, m_core, m_shell):
         
         # Calcular coeficientes auxiliares
         # Bohren & Huffman, Ecuaciones (4.55)-(4.60)
-        m_ratio = m_core / m_shell
-        
+        try:
+            m_ratio = m_core / m_shell
+            if not np.isfinite(m_ratio):
+                raise ValueError(f"m_ratio is {m_ratio}")
+        except Exception as e_inner:
+            logger.warning(
+                f"Error in mie_2layer_coeffs for n={n} during m_ratio calculation: {e_inner}. "
+                f"Inputs: x_core={x_core}, x_total={x_total}, m_core={m_core}, m_shell={m_shell}"
+            )
+            raise
+
         # Condiciones de contorno en r = r_core
-        an1 = m_ratio * dpsi_mx1 * psi_mx2_core - psi_mx1 * dpsi_mx2_core
-        an2 = m_ratio * dpsi_mx1 * xi_mx2_core - psi_mx1 * dxi_mx2_core
-        bn1 = psi_mx1 * dpsi_mx2_core - m_ratio * dpsi_mx1 * psi_mx2_core
-        bn2 = psi_mx1 * dxi_mx2_core - m_ratio * dpsi_mx1 * xi_mx2_core
+        try:
+            an1 = m_ratio * dpsi_mx1 * psi_mx2_core - psi_mx1 * dpsi_mx2_core
+            if not np.isfinite(an1):
+                raise ValueError(f"an1 is {an1}")
+        except Exception as e_inner:
+            logger.warning(
+                f"Error in mie_2layer_coeffs for n={n} during an1 calculation: {e_inner}. "
+                f"Inputs: x_core={x_core}, x_total={x_total}, m_core={m_core}, m_shell={m_shell}. "
+                f"Intermediates: m_ratio={m_ratio}, dpsi_mx1={dpsi_mx1}, psi_mx2_core={psi_mx2_core}, psi_mx1={psi_mx1}, dpsi_mx2_core={dpsi_mx2_core}"
+            )
+            raise
         
-        # Calcular coeficiente G_n y auxiliar
-        G_n = (an2 / an1) * (psi_mx2_total / xi_mx2_total) - (dpsi_mx2_total / dxi_mx2_total)
-        G_n /= (an2 / an1) - (psi_mx2_total / xi_mx2_total) * (dpsi_mx2_total / dxi_mx2_total)
+        try:
+            an2 = m_ratio * dpsi_mx1 * xi_mx2_core - psi_mx1 * dxi_mx2_core
+            if not np.isfinite(an2):
+                raise ValueError(f"an2 is {an2}")
+        except Exception as e_inner:
+            logger.warning(
+                f"Error in mie_2layer_coeffs for n={n} during an2 calculation: {e_inner}. "
+                f"Inputs: x_core={x_core}, x_total={x_total}, m_core={m_core}, m_shell={m_shell}. "
+                f"Intermediates: m_ratio={m_ratio}, dpsi_mx1={dpsi_mx1}, xi_mx2_core={xi_mx2_core}, psi_mx1={psi_mx1}, dxi_mx2_core={dxi_mx2_core}"
+            )
+            raise
+
+        try:
+            bn1 = psi_mx1 * dpsi_mx2_core - m_ratio * dpsi_mx1 * psi_mx2_core
+            if not np.isfinite(bn1):
+                raise ValueError(f"bn1 is {bn1}")
+        except Exception as e_inner:
+            logger.warning(
+                f"Error in mie_2layer_coeffs for n={n} during bn1 calculation: {e_inner}. "
+                f"Inputs: x_core={x_core}, x_total={x_total}, m_core={m_core}, m_shell={m_shell}. "
+                f"Intermediates: psi_mx1={psi_mx1}, dpsi_mx2_core={dpsi_mx2_core}, m_ratio={m_ratio}, dpsi_mx1={dpsi_mx1}, psi_mx2_core={psi_mx2_core}"
+            )
+            raise
+
+        try:
+            bn2 = psi_mx1 * dxi_mx2_core - m_ratio * dpsi_mx1 * xi_mx2_core
+            if not np.isfinite(bn2):
+                raise ValueError(f"bn2 is {bn2}")
+        except Exception as e_inner:
+            logger.warning(
+                f"Error in mie_2layer_coeffs for n={n} during bn2 calculation: {e_inner}. "
+                f"Inputs: x_core={x_core}, x_total={x_total}, m_core={m_core}, m_shell={m_shell}. "
+                f"Intermediates: psi_mx1={psi_mx1}, dxi_mx2_core={dxi_mx2_core}, m_ratio={m_ratio}, dpsi_mx1={dpsi_mx1}, xi_mx2_core={xi_mx2_core}"
+            )
+            raise
         
+        # Calcular coeficiente G_n y auxiliar para an
+        try:
+            term_an_G_num1 = an2 / an1
+            term_an_G_num2 = psi_mx2_total / xi_mx2_total
+            term_an_G_den1 = term_an_G_num1 # an2 / an1
+            term_an_G_den2 = term_an_G_num2 * (dpsi_mx2_total / dxi_mx2_total) # (psi_mx2_total / xi_mx2_total) * (dpsi_mx2_total / dxi_mx2_total)
+
+            if not np.isfinite(term_an_G_num1) or not np.isfinite(term_an_G_num2) or \
+               not np.isfinite(dpsi_mx2_total) or not np.isfinite(dxi_mx2_total) or \
+               not np.isfinite(term_an_G_den2):
+                raise ValueError(f"Non-finite intermediate in G_n for an: an1={an1}, an2={an2}, psi_mx2_total={psi_mx2_total}, xi_mx2_total={xi_mx2_total}, dpsi_mx2_total={dpsi_mx2_total}, dxi_mx2_total={dxi_mx2_total}")
+
+            G_n_an_num = term_an_G_num1 * term_an_G_num2 - (dpsi_mx2_total / dxi_mx2_total)
+            G_n_an_den = term_an_G_den1 - term_an_G_den2
+            
+            if G_n_an_den == 0:
+                raise ZeroDivisionError("Denominator for G_n (an) is zero")
+            G_n_an = G_n_an_num / G_n_an_den
+            if not np.isfinite(G_n_an):
+                raise ValueError(f"G_n_an is {G_n_an}")
+        except Exception as e_inner:
+            logger.warning(
+                f"Error in mie_2layer_coeffs for n={n} during G_n (an) calculation: {e_inner}. "
+                f"Inputs: x_core={x_core}, x_total={x_total}, m_core={m_core}, m_shell={m_shell}. "
+                f"Intermediates: an1={an1}, an2={an2}, psi_mx2_total={psi_mx2_total}, xi_mx2_total={xi_mx2_total}, dpsi_mx2_total={dpsi_mx2_total}, dxi_mx2_total={dxi_mx2_total}"
+            )
+            raise
+
         # Calcular coeficiente a_n
-        num_a = m_shell * psi_x * dpsi_mx2_total - psi_mx2_total * dpsi_x + G_n * (m_shell * psi_x * dxi_mx2_total - xi_mx2_total * dpsi_x)
-        den_a = m_shell * xi_x * dpsi_mx2_total - psi_mx2_total * dxi_x + G_n * (m_shell * xi_x * dxi_mx2_total - xi_mx2_total * dxi_x)
-        an = num_a / den_a
+        try:
+            num_a = m_shell * psi_x * dpsi_mx2_total - psi_mx2_total * dpsi_x + G_n_an * (m_shell * psi_x * dxi_mx2_total - xi_mx2_total * dpsi_x)
+            den_a = m_shell * xi_x * dpsi_mx2_total - psi_mx2_total * dxi_x + G_n_an * (m_shell * xi_x * dxi_mx2_total - xi_mx2_total * dxi_x)
+            if den_a == 0:
+                raise ZeroDivisionError("Denominator for an is zero")
+            an = num_a / den_a
+            if not np.isfinite(an):
+                raise ValueError(f"an is {an}")
+        except Exception as e_inner:
+            logger.warning(
+                f"Error in mie_2layer_coeffs for n={n} during an calculation: {e_inner}. "
+                f"Inputs: x_core={x_core}, x_total={x_total}, m_core={m_core}, m_shell={m_shell}. "
+                f"Intermediates: G_n_an={G_n_an}, num_a={num_a}, den_a={den_a}"
+            )
+            raise
+        
+        # Calcular coeficiente G_n y auxiliar para bn
+        try:
+            term_bn_G_num1 = bn2 / bn1
+            term_bn_G_num2 = psi_mx2_total / xi_mx2_total
+            term_bn_G_den1 = term_bn_G_num1 # bn2 / bn1
+            term_bn_G_den2 = term_bn_G_num2 * (dpsi_mx2_total / dxi_mx2_total) # (psi_mx2_total / xi_mx2_total) * (dpsi_mx2_total / dxi_mx2_total)
+
+            if not np.isfinite(term_bn_G_num1) or not np.isfinite(term_bn_G_num2) or \
+               not np.isfinite(dpsi_mx2_total) or not np.isfinite(dxi_mx2_total) or \
+               not np.isfinite(term_bn_G_den2):
+                raise ValueError(f"Non-finite intermediate in G_n for bn: bn1={bn1}, bn2={bn2}, psi_mx2_total={psi_mx2_total}, xi_mx2_total={xi_mx2_total}, dpsi_mx2_total={dpsi_mx2_total}, dxi_mx2_total={dxi_mx2_total}")
+
+            G_n_bn_num = term_bn_G_num1 * term_bn_G_num2 - (dpsi_mx2_total / dxi_mx2_total)
+            G_n_bn_den = term_bn_G_den1 - term_bn_G_den2
+            if G_n_bn_den == 0:
+                raise ZeroDivisionError("Denominator for G_n (bn) is zero")
+            G_n_bn = G_n_bn_num / G_n_bn_den
+            if not np.isfinite(G_n_bn):
+                raise ValueError(f"G_n_bn is {G_n_bn}")
+        except Exception as e_inner:
+            logger.warning(
+                f"Error in mie_2layer_coeffs for n={n} during G_n (bn) calculation: {e_inner}. "
+                f"Inputs: x_core={x_core}, x_total={x_total}, m_core={m_core}, m_shell={m_shell}. "
+                f"Intermediates: bn1={bn1}, bn2={bn2}, psi_mx2_total={psi_mx2_total}, xi_mx2_total={xi_mx2_total}, dpsi_mx2_total={dpsi_mx2_total}, dxi_mx2_total={dxi_mx2_total}"
+            )
+            raise
         
         # Calcular coeficiente b_n
-        G_n = (bn2 / bn1) * (psi_mx2_total / xi_mx2_total) - (dpsi_mx2_total / dxi_mx2_total)
-        G_n /= (bn2 / bn1) - (psi_mx2_total / xi_mx2_total) * (dpsi_mx2_total / dxi_mx2_total)
-        
-        num_b = psi_mx2_total * dpsi_x - m_shell * psi_x * dpsi_mx2_total + G_n * (xi_mx2_total * dpsi_x - m_shell * psi_x * dxi_mx2_total)
-        den_b = psi_mx2_total * dxi_x - m_shell * xi_x * dpsi_mx2_total + G_n * (xi_mx2_total * dxi_x - m_shell * xi_x * dxi_mx2_total)
-        bn = num_b / den_b
+        try:
+            num_b = psi_mx2_total * dpsi_x - m_shell * psi_x * dpsi_mx2_total + G_n_bn * (xi_mx2_total * dpsi_x - m_shell * psi_x * dxi_mx2_total)
+            den_b = psi_mx2_total * dxi_x - m_shell * xi_x * dpsi_mx2_total + G_n_bn * (xi_mx2_total * dxi_x - m_shell * xi_x * dxi_mx2_total)
+            if den_b == 0:
+                raise ZeroDivisionError("Denominator for bn is zero")
+            bn = num_b / den_b
+            if not np.isfinite(bn):
+                raise ValueError(f"bn is {bn}")
+        except Exception as e_inner:
+            logger.warning(
+                f"Error in mie_2layer_coeffs for n={n} during bn calculation: {e_inner}. "
+                f"Inputs: x_core={x_core}, x_total={x_total}, m_core={m_core}, m_shell={m_shell}. "
+                f"Intermediates: G_n_bn={G_n_bn}, num_b={num_b}, den_b={den_b}"
+            )
+            raise
         
         # Añadir a las listas de coeficientes
         an_vals.append(an)
@@ -682,11 +796,13 @@ def sigma_sca_ssc_coreshell(r_core, t_shell, n_core, k_core, n_shell, k_shell, �
         an_vals, bn_vals = mie_2layer_coeffs(x_core, x_total, m_core, m_shell)
         nmax = len(an_vals)
     except Exception as e:
-        logger.error(f"Error calculando coeficientes de núcleo-corteza: {e}")
-        # Fallback a la versión estándar con el índice promedio
-        n_avg = (n_core + n_shell) / 2
-        k_avg = (k_core + k_shell) / 2
-        return sigma_sca_ssc(r_total, n_avg + 1j * k_avg, λ, n_med, angle_range)
+        logger.error(
+            f"Error calculating core-shell Mie coefficients: {e}. "
+            f"Inputs: r_core={r_core:.4e}, t_shell={t_shell:.4e}, "
+            f"n_core={n_core}, k_core={k_core}, n_shell={n_shell}, k_shell={k_shell}, "
+            f"lambda={λ:.4e}. Returning NaN."
+        )
+        return np.nan
     
     # Precalcular funciones angulares para todos los órdenes y ángulos
     pi_n_vals = {}
@@ -723,82 +839,14 @@ def sigma_sca_ssc_coreshell(r_core, t_shell, n_core, k_core, n_shell, k_shell, �
     
     # Protección contra valores no físicos
     if not np.isfinite(sigma_ssc) or sigma_ssc < 0:
-        logger.debug(f"Valor de sigma no físico en núcleo-corteza: sigma_ssc={sigma_ssc}")
-        # Usar una aproximación basada en el volumen total
-        diameter_nm = 2 * r_total * 1e9
-        approx_threshold = config.get('mie_approx_threshold', 1e-36)
-        sigma_approx = approx_threshold * (diameter_nm ** 6)
-        return sigma_approx
+        logger.warning(
+            f"Non-physical sigma_ssc_coreshell encountered: {sigma_ssc:.4e}. "
+            f"Inputs: r_core={r_core:.4e}, t_shell={t_shell:.4e}, n_core={n_core}, k_core={k_core}, "
+            f"n_shell={n_shell}, k_shell={k_shell}, lambda={λ:.4e} m. Returning NaN."
+        )
+        return np.nan
     
     return sigma_ssc
-
-def integrate_sigma(an_vals, bn_vals, x, angle_range):
-    """
-    Integra la sección eficaz diferencial usando coeficientes de Mie precalculados.
-    
-    Args:
-        an_vals: Lista de coeficientes an
-        bn_vals: Lista de coeficientes bn
-        x: Parámetro de tamaño
-        angle_range: Rango angular en grados [min, max]
-        
-    Returns:
-        Sección eficaz integrada [m²]
-    """
-    # Convertir ángulos a radianes
-    theta_min, theta_max = np.deg2rad(angle_range)
-    
-    # Obtener parámetros de integración angular de la configuración
-    config = get_config()
-    n_points = config.get('mie_n_points', 100)
-    
-    # Definir la malla angular
-    theta_vals = np.linspace(theta_min, theta_max, n_points)
-    dtheta = (theta_max - theta_min) / (n_points - 1)
-    
-    # Número de términos
-    nmax = len(an_vals)
-    
-    # Constante k (recuperar de x = r)
-    k = x / (1.0)  # r = 1.0 unidad de longitud
-    
-    # Precalcular cos(θ) para todos los ángulos
-    costheta_vals = np.cos(theta_vals)
-    
-    # Precalcular funciones angulares
-    pi_n_vals = {}
-    tau_n_vals = {}
-    
-    for n in range(1, nmax + 1):
-        pi_n_vals[n] = np.array([pi_n(n, u) for u in costheta_vals])
-        tau_n_vals[n] = np.array([tau_n(n, u) for u in costheta_vals])
-    
-    # Calcular la sección eficaz diferencial para cada ángulo
-    dsigma_values = np.zeros(n_points)
-    
-    for i, theta in enumerate(theta_vals):
-        u = costheta_vals[i]
-        S1 = 0
-        S2 = 0
-        
-        for n in range(1, nmax + 1):
-            an = an_vals[n-1]
-            bn = bn_vals[n-1]
-            
-            pi_n_val = pi_n_vals[n][i]
-            tau_n_val = tau_n_vals[n][i]
-            
-            term = (2*n + 1) / (n * (n + 1))
-            S1 += term * (an * pi_n_val + bn * tau_n_val)
-            S2 += term * (an * tau_n_val + bn * pi_n_val)
-        
-        dsigma = (np.abs(S1)**2 + np.abs(S2)**2) / k**2
-        dsigma_values[i] = dsigma * 2 * np.pi * np.sin(theta)
-    
-    # Integración numérica usando regla del trapecio para mayor precisión
-    sigma = np.trapz(dsigma_values, dx=dtheta)
-    
-    return sigma
 
 def fit_K(diameters, intensities, sigma_func, wavelength, n_particle, n_medium, angle_range, show_progress=False):
     """
