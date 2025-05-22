@@ -23,6 +23,28 @@ from joblib import Parallel, delayed
 # Reemplazar la configuración básica por un logger configurado centralmente
 logger = get_logger('cytoflex_calibration')
 
+# Helper functions for Riccati-Bessel functions
+def _psi_n(n, z):
+    """Riccati-Bessel function of the first kind: z*j_n(z)."""
+    return z * spherical_jn(n, z)
+
+def _d_psi_n(n, z):
+    """Derivative of Riccati-Bessel function of the first kind w.r.t. z."""
+    # d/dz (z*j_n(z)) = j_n(z) + z*j_n'(z)
+    return spherical_jn(n, z) + z * spherical_jn(n, z, derivative=True)
+
+def _xi_n(n, z):
+    """Riccati-Bessel function of the third kind: z*h_n^(1)(z)."""
+    # h_n^(1)(z) = j_n(z) + i*y_n(z)
+    return z * (spherical_jn(n, z) + 1j * spherical_yn(n, z))
+
+def _d_xi_n(n, z):
+    """Derivative of Riccati-Bessel function of the third kind w.r.t. z."""
+    # d/dz (z*h_n^(1)(z)) = h_n^(1)(z) + z*h_n^(1)'(z)
+    hn_val = spherical_jn(n, z) + 1j * spherical_yn(n, z)
+    d_hn_val = spherical_jn(n, z, derivative=True) + 1j * spherical_yn(n, z, derivative=True)
+    return hn_val + z * d_hn_val
+
 def load_calibration(path):
     """
     Carga datos de calibración desde un archivo JSON.
@@ -152,21 +174,33 @@ def mie_an_cached(n, x_discrete, m_discrete):
     Returns:
         Coeficiente complejo a_n
     """
-    # Lógica idéntica a mie_an
-    mx = m_discrete * x_discrete
+    # x = x_discrete
+    # m = m_discrete (note: m_discrete can be complex if derived from complex m)
+    # mx = m * x
+
+    psi_mx = _psi_n(n, m_discrete * x_discrete)
+    psi_x = _psi_n(n, x_discrete)
+    d_psi_mx = _d_psi_n(n, m_discrete * x_discrete)
+    d_psi_x = _d_psi_n(n, x_discrete)
     
-    jmx = spherical_jn(n, mx)
-    jx = spherical_jn(n, x_discrete)
+    xi_x = _xi_n(n, x_discrete)
+    # xi_mx is not directly in the formula, but d_xi_mx might be if formula rearranged
+    # d_xi_mx = _d_xi_n(n, m_discrete * x_discrete) # Not needed for B&H a_n, b_n
+    d_xi_x = _d_xi_n(n, x_discrete)
+
+    # Bohren & Huffman Eq. 4.53 for a_n
+    # a_n = (ψ_n'(x)ψ_n(mx) - m*ψ_n(x)ψ_n'(mx)) / (ξ_n'(x)ψ_n(mx) - m*ξ_n(x)ψ_n'(mx))
+    # Note: The formula provided in the task seems to be for a_n = (m*ψ_n(x)ψ_n'(mx) - ψ_n'(x)ψ_n(mx)) / (m*ξ_n(x)ψ_n'(mx) - ξ_n'(x)ψ_n(mx))
+    # The standard B&H formula is: a_n = (ψ_n'(x)ψ_n(mx) - m*ψ_n(x)ψ_n'(mx)) / (ξ_n'(x)ψ_n(mx) - m*ξ_n(x)ψ_n'(mx))
+    # Let's use the standard one, which matches the numerator = d_psi_x * psi_mx - m_discrete * psi_x * d_psi_mx
     
-    djmx = spherical_jn(n, mx, derivative=True)
-    djx = spherical_jn(n, x_discrete, derivative=True)
+    numerator   = d_psi_x * psi_mx - m_discrete * psi_x * d_psi_mx
+    denominator = d_xi_x  * psi_mx - m_discrete * xi_x  * d_psi_mx
     
-    h1x = jx + 1j * spherical_yn(n, x_discrete)
-    dh1x = djx + 1j * spherical_yn(n, x_discrete, derivative=True)
-    
-    numerator = m_discrete * jmx * djx - jx * djmx
-    denominator = m_discrete * jmx * dh1x - h1x * djmx
-    
+    if denominator == 0:
+        # Handle division by zero, e.g., by returning a large number, NaN, or logging and raising
+        logger.warning(f"Denominator is zero in mie_an_cached for n={n}, x={x_discrete}, m={m_discrete}")
+        return np.nan # Or some other appropriate error indicator
     return numerator / denominator
 
 def mie_an(n, x, m, config=None):
@@ -210,21 +244,27 @@ def mie_bn_cached(n, x_discrete, m_discrete):
     Returns:
         Coeficiente complejo b_n
     """
-    # Lógica idéntica a mie_bn
-    mx = m_discrete * x_discrete
-    
-    jmx = spherical_jn(n, mx)
-    jx = spherical_jn(n, x_discrete)
-    
-    djmx = spherical_jn(n, mx, derivative=True)
-    djx = spherical_jn(n, x_discrete, derivative=True)
-    
-    h1x = jx + 1j * spherical_yn(n, x_discrete)
-    dh1x = djx + 1j * spherical_yn(n, x_discrete, derivative=True)
-    
-    numerator = jmx * djx - m_discrete * jx * djmx
-    denominator = jmx * dh1x - m_discrete * h1x * djmx
-    
+    # x = x_discrete
+    # m = m_discrete
+    # mx = m * x
+
+    psi_mx = _psi_n(n, m_discrete * x_discrete)
+    psi_x = _psi_n(n, x_discrete)
+    d_psi_mx = _d_psi_n(n, m_discrete * x_discrete)
+    d_psi_x = _d_psi_n(n, x_discrete)
+
+    xi_x = _xi_n(n, x_discrete)
+    # xi_mx = _xi_n(n, m_discrete * x_discrete) # Not needed for B&H a_n, b_n
+    d_xi_x = _d_xi_n(n, x_discrete)
+
+    # Bohren & Huffman Eq. 4.53 for b_n
+    # b_n = (m*ψ_n'(x)ψ_n(mx) - ψ_n(x)ψ_n'(mx)) / (m*ξ_n'(x)ψ_n(mx) - ξ_n(x)ψ_n'(mx))
+    numerator   = m_discrete * d_psi_x * psi_mx - psi_x * d_psi_mx
+    denominator = m_discrete * d_xi_x  * psi_mx - xi_x  * d_psi_mx
+
+    if denominator == 0:
+        logger.warning(f"Denominator is zero in mie_bn_cached for n={n}, x={x_discrete}, m={m_discrete}")
+        return np.nan
     return numerator / denominator
 
 def mie_bn(n, x, m):
@@ -513,7 +553,7 @@ def sigma_sca_ssc(r, n_particle, λ, n_medium, angle_range):
             S1 += term * (an * pi_n_val + bn * tau_n_val)
             S2 += term * (an * tau_n_val + bn * pi_n_val)
         
-        dsigma = (np.abs(S1)**2 + np.abs(S2)**2) / k**2
+        dsigma = 0.5 * (np.abs(S1)**2 + np.abs(S2)**2) / k**2
         dsigma_values[i] = dsigma * 2 * np.pi * np.sin(theta)
     
     # Integración numérica usando regla del trapecio para mayor precisión
@@ -561,32 +601,40 @@ def mie_2layer_coeffs(x_core, x_total, m_core, m_shell):
     
     # Calcular coeficientes para cada orden n
     for n in range(1, nmax + 1):
-        # Funciones de Bessel para el núcleo
-        psi_mx1 = spherical_jn(n, m_core * x_core)
-        dpsi_mx1 = spherical_jn(n, m_core * x_core, derivative=True)
-        
-        # Funciones de Bessel para la corteza (en r = r_core)
-        psi_mx2_core = spherical_jn(n, m_shell * x_core)
-        dpsi_mx2_core = spherical_jn(n, m_shell * x_core, derivative=True)
-        xi_mx2_core = psi_mx2_core + 1j * spherical_yn(n, m_shell * x_core)
-        dxi_mx2_core = dpsi_mx2_core + 1j * spherical_yn(n, m_shell * x_core, derivative=True)
-        
-        # Funciones de Bessel para la corteza (en r = r_total)
-        psi_mx2_total = spherical_jn(n, m_shell * x_total)
-        dpsi_mx2_total = spherical_jn(n, m_shell * x_total, derivative=True)
-        xi_mx2_total = psi_mx2_total + 1j * spherical_yn(n, m_shell * x_total)
-        dxi_mx2_total = dpsi_mx2_total + 1j * spherical_yn(n, m_shell * x_total, derivative=True)
-        
-        # Funciones de Bessel para el medio externo (en r = r_total)
-        psi_x = spherical_jn(n, x_total)
-        dpsi_x = spherical_jn(n, x_total, derivative=True)
-        xi_x = psi_x + 1j * spherical_yn(n, x_total)
-        dxi_x = dpsi_x + 1j * spherical_yn(n, x_total, derivative=True)
+        # Arguments for Riccati-Bessel functions
+        arg_mcore_xcore = m_core * x_core
+        arg_mshell_xcore = m_shell * x_core
+        arg_mshell_xtotal = m_shell * x_total
+        arg_xtotal = x_total
+
+        # Riccati-Bessel functions for the core (material 2, radius y=x_core)
+        psi_mcore_xcore = _psi_n(n, arg_mcore_xcore)
+        d_psi_mcore_xcore = _d_psi_n(n, arg_mcore_xcore)
+
+        # Riccati-Bessel functions for the shell (material 1) at the core-shell interface (radius y=x_core)
+        psi_mshell_xcore = _psi_n(n, arg_mshell_xcore)
+        d_psi_mshell_xcore = _d_psi_n(n, arg_mshell_xcore)
+        xi_mshell_xcore = _xi_n(n, arg_mshell_xcore)
+        d_xi_mshell_xcore = _d_xi_n(n, arg_mshell_xcore)
+
+        # Riccati-Bessel functions for the shell (material 1) at the shell-medium interface (radius x=x_total)
+        psi_mshell_xtotal = _psi_n(n, arg_mshell_xtotal)
+        d_psi_mshell_xtotal = _d_psi_n(n, arg_mshell_xtotal)
+        xi_mshell_xtotal = _xi_n(n, arg_mshell_xtotal)
+        d_xi_mshell_xtotal = _d_xi_n(n, arg_mshell_xtotal)
+
+        # Riccati-Bessel functions for the surrounding medium (at radius x=x_total)
+        psi_xtotal = _psi_n(n, arg_xtotal)
+        d_psi_xtotal = _d_psi_n(n, arg_xtotal)
+        xi_xtotal = _xi_n(n, arg_xtotal)
+        d_xi_xtotal = _d_xi_n(n, arg_xtotal)
         
         # Calcular coeficientes auxiliares
         # Bohren & Huffman, Ecuaciones (4.55)-(4.60)
+        # Note: m_core = m2 (core relative index), m_shell = m1 (shell relative index)
+        # x_core = y (core size parameter), x_total = x (total particle size parameter)
         try:
-            m_ratio = m_core / m_shell
+            m_ratio = m_core / m_shell # m2 / m1
             if not np.isfinite(m_ratio):
                 raise ValueError(f"m_ratio is {m_ratio}")
         except Exception as e_inner:
@@ -596,68 +644,87 @@ def mie_2layer_coeffs(x_core, x_total, m_core, m_shell):
             )
             raise
 
-        # Condiciones de contorno en r = r_core
+        # Condiciones de contorno en r = r_core (y = x_core)
+        # Using B&H notation for clarity in mapping to equations:
+        # ψ_n(m2y) = psi_mcore_xcore, ψ_n'(m2y) = d_psi_mcore_xcore
+        # ψ_n(m1y) = psi_mshell_xcore, ψ_n'(m1y) = d_psi_mshell_xcore
+        # ξ_n(m1y) = xi_mshell_xcore, ξ_n'(m1y) = d_xi_mshell_xcore
         try:
-            an1 = m_ratio * dpsi_mx1 * psi_mx2_core - psi_mx1 * dpsi_mx2_core
-            if not np.isfinite(an1):
-                raise ValueError(f"an1 is {an1}")
+            # an1: D_n^(1) for a_n, using corrected terms as per B&H Eq. 4.86 (denominator of A_n)
+            # A_n = [m1*ψ_n(m1y)ψ_n'(m2y) - m2*ψ_n'(m1y)ψ_n(m2y)] / [m1*ξ_n(m1y)ψ_n'(m2y) - m2*ξ_n'(m1y)ψ_n(m2y)]
+            # For a_n, the D_n type terms are:
+            # D_n_psi_psi_prime = m_shell * psi_mshell_xcore * d_psi_mcore_xcore - m_core * d_psi_mshell_xcore * psi_mcore_xcore
+            # D_n_xi_psi_prime  = m_shell * xi_mshell_xcore  * d_psi_mcore_xcore - m_core * d_xi_mshell_xcore  * psi_mcore_xcore
+            # These are used to form A_n and B_n in B&H which are different from an, bn coefficients.
+            # The intermediate terms an1, an2, bn1, bn2 map to parts of B&H eqs 4.85, 4.86 denominators for G_n like terms or are part of the final numerator/denominator of an, bn.
+            # Let's stick to the existing structure of an1, an2, bn1, bn2 and ensure they use Riccati-Bessel functions
+            an1 = m_shell * psi_mshell_xtotal * d_psi_xtotal - d_psi_mshell_xtotal * psi_xtotal #This seems to be part of numerator for an, not an1 in B&H context for Gn
+            # The original code's an1, an2, bn1, bn2 are related to the G_n terms in a way that might be specific to a particular formulation.
+            # Let's re-evaluate based on the provided an, bn formulas using G_n.
+            # The G_n terms are related to ratios like Dn_prime / Dn from B&H.
+            # The original code:
+            # an1 = m_ratio * dpsi_mx1 * psi_mx2_core - psi_mx1 * dpsi_mx2_core
+            # an2 = m_ratio * dpsi_mx1 * xi_mx2_core - psi_mx1 * dxi_mx2_core
+            # bn1 = psi_mx1 * dpsi_mx2_core - m_ratio * dpsi_mx1 * psi_mx2_core
+            # bn2 = psi_mx1 * dxi_mx2_core - m_ratio * dpsi_mx1 * xi_mx2_core
+            # Using the new Riccati-Bessel functions:
+            an1 = m_ratio * d_psi_mcore_xcore * psi_mshell_xcore - psi_mcore_xcore * d_psi_mshell_xcore
+            if not np.isfinite(an1): raise ValueError(f"an1 is {an1}")
         except Exception as e_inner:
             logger.warning(
                 f"Error in mie_2layer_coeffs for n={n} during an1 calculation: {e_inner}. "
                 f"Inputs: x_core={x_core}, x_total={x_total}, m_core={m_core}, m_shell={m_shell}. "
-                f"Intermediates: m_ratio={m_ratio}, dpsi_mx1={dpsi_mx1}, psi_mx2_core={psi_mx2_core}, psi_mx1={psi_mx1}, dpsi_mx2_core={dpsi_mx2_core}"
+                f"Intermediates: m_ratio={m_ratio}, d_psi_mcore_xcore={d_psi_mcore_xcore}, psi_mshell_xcore={psi_mshell_xcore}, psi_mcore_xcore={psi_mcore_xcore}, d_psi_mshell_xcore={d_psi_mshell_xcore}"
             )
             raise
         
         try:
-            an2 = m_ratio * dpsi_mx1 * xi_mx2_core - psi_mx1 * dxi_mx2_core
-            if not np.isfinite(an2):
-                raise ValueError(f"an2 is {an2}")
+            an2 = m_ratio * d_psi_mcore_xcore * xi_mshell_xcore - psi_mcore_xcore * d_xi_mshell_xcore
+            if not np.isfinite(an2): raise ValueError(f"an2 is {an2}")
         except Exception as e_inner:
             logger.warning(
                 f"Error in mie_2layer_coeffs for n={n} during an2 calculation: {e_inner}. "
                 f"Inputs: x_core={x_core}, x_total={x_total}, m_core={m_core}, m_shell={m_shell}. "
-                f"Intermediates: m_ratio={m_ratio}, dpsi_mx1={dpsi_mx1}, xi_mx2_core={xi_mx2_core}, psi_mx1={psi_mx1}, dxi_mx2_core={dxi_mx2_core}"
+                f"Intermediates: m_ratio={m_ratio}, d_psi_mcore_xcore={d_psi_mcore_xcore}, xi_mshell_xcore={xi_mshell_xcore}, psi_mcore_xcore={psi_mcore_xcore}, d_xi_mshell_xcore={d_xi_mshell_xcore}"
             )
             raise
 
         try:
-            bn1 = psi_mx1 * dpsi_mx2_core - m_ratio * dpsi_mx1 * psi_mx2_core
-            if not np.isfinite(bn1):
-                raise ValueError(f"bn1 is {bn1}")
+            bn1 = psi_mcore_xcore * d_psi_mshell_xcore - m_ratio * d_psi_mcore_xcore * psi_mshell_xcore
+            if not np.isfinite(bn1): raise ValueError(f"bn1 is {bn1}")
         except Exception as e_inner:
             logger.warning(
                 f"Error in mie_2layer_coeffs for n={n} during bn1 calculation: {e_inner}. "
                 f"Inputs: x_core={x_core}, x_total={x_total}, m_core={m_core}, m_shell={m_shell}. "
-                f"Intermediates: psi_mx1={psi_mx1}, dpsi_mx2_core={dpsi_mx2_core}, m_ratio={m_ratio}, dpsi_mx1={dpsi_mx1}, psi_mx2_core={psi_mx2_core}"
+                f"Intermediates: psi_mcore_xcore={psi_mcore_xcore}, d_psi_mshell_xcore={d_psi_mshell_xcore}, m_ratio={m_ratio}, d_psi_mcore_xcore={d_psi_mcore_xcore}, psi_mshell_xcore={psi_mshell_xcore}"
             )
             raise
 
         try:
-            bn2 = psi_mx1 * dxi_mx2_core - m_ratio * dpsi_mx1 * xi_mx2_core
-            if not np.isfinite(bn2):
-                raise ValueError(f"bn2 is {bn2}")
+            bn2 = psi_mcore_xcore * d_xi_mshell_xcore - m_ratio * d_psi_mcore_xcore * xi_mshell_xcore
+            if not np.isfinite(bn2): raise ValueError(f"bn2 is {bn2}")
         except Exception as e_inner:
             logger.warning(
                 f"Error in mie_2layer_coeffs for n={n} during bn2 calculation: {e_inner}. "
                 f"Inputs: x_core={x_core}, x_total={x_total}, m_core={m_core}, m_shell={m_shell}. "
-                f"Intermediates: psi_mx1={psi_mx1}, dxi_mx2_core={dxi_mx2_core}, m_ratio={m_ratio}, dpsi_mx1={dpsi_mx1}, xi_mx2_core={xi_mx2_core}"
+                f"Intermediates: psi_mcore_xcore={psi_mcore_xcore}, d_xi_mshell_xcore={d_xi_mshell_xcore}, m_ratio={m_ratio}, d_psi_mcore_xcore={d_psi_mcore_xcore}, xi_mshell_xcore={xi_mshell_xcore}"
             )
             raise
         
         # Calcular coeficiente G_n y auxiliar para an
         try:
+            # Using psi_mshell_xtotal, xi_mshell_xtotal, d_psi_mshell_xtotal, d_xi_mshell_xtotal
             term_an_G_num1 = an2 / an1
-            term_an_G_num2 = psi_mx2_total / xi_mx2_total
-            term_an_G_den1 = term_an_G_num1 # an2 / an1
-            term_an_G_den2 = term_an_G_num2 * (dpsi_mx2_total / dxi_mx2_total) # (psi_mx2_total / xi_mx2_total) * (dpsi_mx2_total / dxi_mx2_total)
+            term_an_G_num2 = psi_mshell_xtotal / xi_mshell_xtotal
+            term_an_G_den1 = term_an_G_num1 
+            term_an_G_den2 = term_an_G_num2 * (d_psi_mshell_xtotal / d_xi_mshell_xtotal)
 
             if not np.isfinite(term_an_G_num1) or not np.isfinite(term_an_G_num2) or \
-               not np.isfinite(dpsi_mx2_total) or not np.isfinite(dxi_mx2_total) or \
+               not np.isfinite(d_psi_mshell_xtotal) or not np.isfinite(d_xi_mshell_xtotal) or \
                not np.isfinite(term_an_G_den2):
-                raise ValueError(f"Non-finite intermediate in G_n for an: an1={an1}, an2={an2}, psi_mx2_total={psi_mx2_total}, xi_mx2_total={xi_mx2_total}, dpsi_mx2_total={dpsi_mx2_total}, dxi_mx2_total={dxi_mx2_total}")
+                raise ValueError(f"Non-finite intermediate in G_n for an: an1={an1}, an2={an2}, psi_mshell_xtotal={psi_mshell_xtotal}, xi_mshell_xtotal={xi_mshell_xtotal}, d_psi_mshell_xtotal={d_psi_mshell_xtotal}, d_xi_mshell_xtotal={d_xi_mshell_xtotal}")
 
-            G_n_an_num = term_an_G_num1 * term_an_G_num2 - (dpsi_mx2_total / dxi_mx2_total)
+            G_n_an_num = term_an_G_num1 * term_an_G_num2 - (d_psi_mshell_xtotal / d_xi_mshell_xtotal)
             G_n_an_den = term_an_G_den1 - term_an_G_den2
             
             if G_n_an_den == 0:
@@ -669,14 +736,16 @@ def mie_2layer_coeffs(x_core, x_total, m_core, m_shell):
             logger.warning(
                 f"Error in mie_2layer_coeffs for n={n} during G_n (an) calculation: {e_inner}. "
                 f"Inputs: x_core={x_core}, x_total={x_total}, m_core={m_core}, m_shell={m_shell}. "
-                f"Intermediates: an1={an1}, an2={an2}, psi_mx2_total={psi_mx2_total}, xi_mx2_total={xi_mx2_total}, dpsi_mx2_total={dpsi_mx2_total}, dxi_mx2_total={dxi_mx2_total}"
+                f"Intermediates: an1={an1}, an2={an2}, psi_mshell_xtotal={psi_mshell_xtotal}, xi_mshell_xtotal={xi_mshell_xtotal}, d_psi_mshell_xtotal={d_psi_mshell_xtotal}, d_xi_mshell_xtotal={d_xi_mshell_xtotal}"
             )
             raise
 
         # Calcular coeficiente a_n
+        # Using psi_xtotal, d_psi_xtotal, xi_xtotal, d_xi_xtotal for functions of x_total (medium)
+        # and psi_mshell_xtotal, d_psi_mshell_xtotal, xi_mshell_xtotal, d_xi_mshell_xtotal for functions of m_shell*x_total (shell at outer boundary)
         try:
-            num_a = m_shell * psi_x * dpsi_mx2_total - psi_mx2_total * dpsi_x + G_n_an * (m_shell * psi_x * dxi_mx2_total - xi_mx2_total * dpsi_x)
-            den_a = m_shell * xi_x * dpsi_mx2_total - psi_mx2_total * dxi_x + G_n_an * (m_shell * xi_x * dxi_mx2_total - xi_mx2_total * dxi_x)
+            num_a = m_shell * psi_xtotal * d_psi_mshell_xtotal - psi_mshell_xtotal * d_psi_xtotal + G_n_an * (m_shell * psi_xtotal * d_xi_mshell_xtotal - xi_mshell_xtotal * d_psi_xtotal)
+            den_a = m_shell * xi_xtotal  * d_psi_mshell_xtotal - psi_mshell_xtotal * d_xi_xtotal  + G_n_an * (m_shell * xi_xtotal  * d_xi_mshell_xtotal - xi_mshell_xtotal * d_xi_xtotal)
             if den_a == 0:
                 raise ZeroDivisionError("Denominator for an is zero")
             an = num_a / den_a
@@ -693,16 +762,16 @@ def mie_2layer_coeffs(x_core, x_total, m_core, m_shell):
         # Calcular coeficiente G_n y auxiliar para bn
         try:
             term_bn_G_num1 = bn2 / bn1
-            term_bn_G_num2 = psi_mx2_total / xi_mx2_total
-            term_bn_G_den1 = term_bn_G_num1 # bn2 / bn1
-            term_bn_G_den2 = term_bn_G_num2 * (dpsi_mx2_total / dxi_mx2_total) # (psi_mx2_total / xi_mx2_total) * (dpsi_mx2_total / dxi_mx2_total)
+            term_bn_G_num2 = psi_mshell_xtotal / xi_mshell_xtotal
+            term_bn_G_den1 = term_bn_G_num1
+            term_bn_G_den2 = term_bn_G_num2 * (d_psi_mshell_xtotal / d_xi_mshell_xtotal)
 
             if not np.isfinite(term_bn_G_num1) or not np.isfinite(term_bn_G_num2) or \
-               not np.isfinite(dpsi_mx2_total) or not np.isfinite(dxi_mx2_total) or \
+               not np.isfinite(d_psi_mshell_xtotal) or not np.isfinite(d_xi_mshell_xtotal) or \
                not np.isfinite(term_bn_G_den2):
-                raise ValueError(f"Non-finite intermediate in G_n for bn: bn1={bn1}, bn2={bn2}, psi_mx2_total={psi_mx2_total}, xi_mx2_total={xi_mx2_total}, dpsi_mx2_total={dpsi_mx2_total}, dxi_mx2_total={dxi_mx2_total}")
+                raise ValueError(f"Non-finite intermediate in G_n for bn: bn1={bn1}, bn2={bn2}, psi_mshell_xtotal={psi_mshell_xtotal}, xi_mshell_xtotal={xi_mshell_xtotal}, d_psi_mshell_xtotal={d_psi_mshell_xtotal}, d_xi_mshell_xtotal={d_xi_mshell_xtotal}")
 
-            G_n_bn_num = term_bn_G_num1 * term_bn_G_num2 - (dpsi_mx2_total / dxi_mx2_total)
+            G_n_bn_num = term_bn_G_num1 * term_bn_G_num2 - (d_psi_mshell_xtotal / d_xi_mshell_xtotal)
             G_n_bn_den = term_bn_G_den1 - term_bn_G_den2
             if G_n_bn_den == 0:
                 raise ZeroDivisionError("Denominator for G_n (bn) is zero")
@@ -713,14 +782,14 @@ def mie_2layer_coeffs(x_core, x_total, m_core, m_shell):
             logger.warning(
                 f"Error in mie_2layer_coeffs for n={n} during G_n (bn) calculation: {e_inner}. "
                 f"Inputs: x_core={x_core}, x_total={x_total}, m_core={m_core}, m_shell={m_shell}. "
-                f"Intermediates: bn1={bn1}, bn2={bn2}, psi_mx2_total={psi_mx2_total}, xi_mx2_total={xi_mx2_total}, dpsi_mx2_total={dpsi_mx2_total}, dxi_mx2_total={dxi_mx2_total}"
+                f"Intermediates: bn1={bn1}, bn2={bn2}, psi_mshell_xtotal={psi_mshell_xtotal}, xi_mshell_xtotal={xi_mshell_xtotal}, d_psi_mshell_xtotal={d_psi_mshell_xtotal}, d_xi_mshell_xtotal={d_xi_mshell_xtotal}"
             )
             raise
         
         # Calcular coeficiente b_n
         try:
-            num_b = psi_mx2_total * dpsi_x - m_shell * psi_x * dpsi_mx2_total + G_n_bn * (xi_mx2_total * dpsi_x - m_shell * psi_x * dxi_mx2_total)
-            den_b = psi_mx2_total * dxi_x - m_shell * xi_x * dpsi_mx2_total + G_n_bn * (xi_mx2_total * dxi_x - m_shell * xi_x * dxi_mx2_total)
+            num_b = psi_mshell_xtotal * d_psi_xtotal - m_shell * psi_xtotal * d_psi_mshell_xtotal + G_n_bn * (xi_mshell_xtotal * d_psi_xtotal - m_shell * psi_xtotal * d_xi_mshell_xtotal)
+            den_b = psi_mshell_xtotal * d_xi_xtotal  - m_shell * xi_xtotal  * d_psi_mshell_xtotal + G_n_bn * (xi_mshell_xtotal * d_xi_xtotal  - m_shell * xi_xtotal  * d_xi_mshell_xtotal)
             if den_b == 0:
                 raise ZeroDivisionError("Denominator for bn is zero")
             bn = num_b / den_b
@@ -840,7 +909,7 @@ def sigma_sca_ssc_coreshell(r_core, t_shell, n_core, k_core, n_shell, k_shell, �
             S1 += term * (an * pi_n_val + bn * tau_n_val)
             S2 += term * (an * tau_n_val + bn * pi_n_val)
         
-        dsigma = (np.abs(S1)**2 + np.abs(S2)**2) / k**2
+        dsigma = 0.5 * (np.abs(S1)**2 + np.abs(S2)**2) / k**2
         dsigma_values[i] = dsigma * 2 * np.pi * np.sin(theta)
     
     # Integración numérica usando regla del trapecio para mayor precisión
